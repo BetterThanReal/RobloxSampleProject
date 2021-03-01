@@ -24,7 +24,7 @@ function module.initRunEnv(initializeStoreFn)
     log:info("Starting game")
   end
 
-  local store = coroutine.wrap(initializeStoreFn)()
+  local store = initializeStoreFn()
   imports.MainGui.mount(store, imports.Players)
 end
 

@@ -23,7 +23,7 @@ function module.initRunEnv(initializeStoreFn)
     log:info("Starting game")
   end
 
-  local store = coroutine.wrap(initializeStoreFn)()
+  local store = initializeStoreFn()
   imports.PlayerState.listenForPlayerAdded(store)
 end
 
