@@ -1,14 +1,9 @@
 -- WRAPPER FUNCTION FOR REQUIRE [BEGIN] --------------------------------------
-return function(global)
+return function(config)
 print "[LOAD] -> shared/Game/Bootstrap"
 
 -- PRIVATE DATA AND HELPER FUNCTIONS [BEGIN] ---------------------------------
--- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
-
--- MODULE DEFINITION [BEGIN] -------------------------------------------------
-local module = {}
-
-function module.getAssert()
+local function getAssert()
   return function(test, message, level, ...)
     if (test == false or test == nil) then
       level = level or 1
@@ -21,7 +16,7 @@ function module.getAssert()
   end
 end
 
-function module.getRequire(config)
+local function getRequire(config, global)
   config = config or {}
 
   local defaults = config.defaults or {}
@@ -36,6 +31,7 @@ function module.getRequire(config)
     )(global, {
       mapping = {
         client = ':StarterPlayer/StarterPlayerScripts/Scripts',
+        runEnv = '/' .. global.runEnv,
         shared = ':ReplicatedStorage/Scripts',
         server = ':ServerScriptService/Scripts',
         ['shared/Assets'] = ':ReplicatedStorage/Assets',
@@ -43,11 +39,23 @@ function module.getRequire(config)
     })
 end
 
-global.Assert = module.getAssert()
-global.Require = module.getRequire(global)
+local isClient = game:GetService("RunService"):IsClient()
+-- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
+
+-- MODULE DEFINITION [BEGIN] -------------------------------------------------
+local global = {
+  Assert = getAssert(),
+  game = game,
+  isClient = isClient,
+  runEnv = isClient and 'client' or 'server',
+  RunEnv = isClient and 'Client' or 'Server',
+}
+
+global.Require = getRequire(config, global)
+global.Require.module('/shared/Game').start()
 
 print "[LOAD] <- shared/Game/Bootstrap"
-return module
+return global
 -- MODULE DEFINITION [END] ---------------------------------------------------
 end
 -- WRAPPER FUNCTION FOR REQUIRE [END] ----------------------------------------

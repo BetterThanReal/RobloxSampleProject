@@ -47,24 +47,68 @@
       <Properties>
         <string name="Name">Scripts</string>
       </Properties>
-      <Item class="Folder" referent="7">
+      <Item class="ModuleScript" referent="7">
         <Properties>
           <string name="Name">Game</string>
-        </Properties>
-        <Item class="ModuleScript" referent="8">
-          <Properties>
-            <string name="Name">Bootstrap</string>
-            <string name="Source">-- WRAPPER FUNCTION FOR REQUIRE [BEGIN] --------------------------------------
+          <string name="Source">-- WRAPPER FUNCTION FOR REQUIRE [BEGIN] --------------------------------------
 return function(global)
-print "[LOAD] -> shared/Game/Bootstrap"
+print "[LOAD] -> shared/Game/init"
 
 -- PRIVATE DATA AND HELPER FUNCTIONS [BEGIN] ---------------------------------
+local Assert = global.Assert
+local Require = global.Require
+
+local logger = Require.module('/shared/Helpers/Logger'):new(
+  { level = 'WARN', warnLevel = 'DEBUG', name = 'Game' })
+
+local imports = {
+  ClientServerEvent = Require.instance('/shared/Assets/Game/ClientServerEvent'),
+  Game = Require.module('/runEnv/Game'),
+  GameStateStore = Require.module('/runEnv/Game/GameState/Store'),
+  RoduxRemoteBridge = Require.module('/shared/Helpers/RoduxRemoteBridge'),
+}
+
+function initializeStore()
+  local log = logger
+  if log then
+    log:info("Initializing game Rodux store")
+  end
+
+  local event = imports.ClientServerEvent
+
+  local remoteDispatcher =
+    imports.RoduxRemoteBridge.withDispatchToRemote(event)
+
+  local store = imports.GameStateStore.create(remoteDispatcher)
+
+  imports.RoduxRemoteBridge.relayDispatchesFromRemote(event, store)
+  return store
+end
+
 -- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
 
 -- MODULE DEFINITION [BEGIN] -------------------------------------------------
 local module = {}
 
-function module.getAssert()
+function module.start()
+  imports.Game.initRunEnv(initializeStore)
+end
+
+print "[LOAD] &lt;- shared/Game/init"
+return module
+-- MODULE DEFINITION [END] ---------------------------------------------------
+end
+-- WRAPPER FUNCTION FOR REQUIRE [END] ----------------------------------------</string>
+        </Properties>
+        <Item class="ModuleScript" referent="8">
+          <Properties>
+            <string name="Name">Bootstrap</string>
+            <string name="Source">-- WRAPPER FUNCTION FOR REQUIRE [BEGIN] --------------------------------------
+return function(config)
+print "[LOAD] -> shared/Game/Bootstrap"
+
+-- PRIVATE DATA AND HELPER FUNCTIONS [BEGIN] ---------------------------------
+local function getAssert()
   return function(test, message, level, ...)
     if (test == false or test == nil) then
       level = level or 1
@@ -77,7 +121,7 @@ function module.getAssert()
   end
 end
 
-function module.getRequire(config)
+local function getRequire(config, global)
   config = config or {}
 
   local defaults = config.defaults or {}
@@ -92,6 +136,7 @@ function module.getRequire(config)
     )(global, {
       mapping = {
         client = ':StarterPlayer/StarterPlayerScripts/Scripts',
+        runEnv = '/' .. global.runEnv,
         shared = ':ReplicatedStorage/Scripts',
         server = ':ServerScriptService/Scripts',
         ['shared/Assets'] = ':ReplicatedStorage/Assets',
@@ -99,11 +144,22 @@ function module.getRequire(config)
     })
 end
 
-global.Assert = module.getAssert()
-global.Require = module.getRequire(global)
+local isClient = game:GetService("RunService"):IsClient()
+-- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
+
+-- MODULE DEFINITION [BEGIN] -------------------------------------------------
+local global = {
+  Assert = getAssert(),
+  game = game,
+  isClient = isClient,
+  runEnv = isClient and 'client' or 'server',
+}
+
+global.Require = getRequire(config, global)
+global.Require.module('/shared/Game').start()
 
 print "[LOAD] &lt;- shared/Game/Bootstrap"
-return module
+return global
 -- MODULE DEFINITION [END] ---------------------------------------------------
 end
 -- WRAPPER FUNCTION FOR REQUIRE [END] ----------------------------------------</string>
@@ -1613,33 +1669,23 @@ local Assert = global.Assert
 local Require = global.Require
 
 local logger = Require.module('/shared/Helpers/Logger'):new(
-  { level = 'WARN', warnLevel = 'DEBUG', name = 'Game' })
+  { level = 'WARN', warnLevel = 'DEBUG', name = 'GameServer' })
 
 local imports = {
-  ClientServerEvent = Require.instance('/shared/Assets/Game/ClientServerEvent'),
-  GameStateStore = Require.module('/server/Game/GameState/Store'),
-  PlayerState = Require.module('/server/Game/PlayerState'),
-  RoduxRemoteBridge = Require.module('/shared/Helpers/RoduxRemoteBridge'),
+  PlayerState = Require.module('/runEnv/Game/PlayerState'),
 }
 -- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
 
 -- MODULE DEFINITION [BEGIN] -------------------------------------------------
 local module = {}
 
-function module.start()
+function module.initRunEnv(initializeStoreFn)
   local log = logger
   if log then
-    log:info("Starting Game)
+    log:info("Starting game")
   end
 
-  local event = imports.ClientServerEvent
-
-  local remoteDispatcher =
-    imports.RoduxRemoteBridge.withDispatchToRemote(event)
-
-  local store = imports.GameStateStore.create(remoteDispatcher)
-
-  imports.RoduxRemoteBridge.relayDispatchesFromRemote(event, store)
+  local store = coroutine.wrap(initializeStoreFn)()
   imports.PlayerState.listenForPlayerAdded(store)
 end
 
@@ -1653,23 +1699,12 @@ end
           <Properties>
             <string name="Name">Bootstrap</string>
             <string name="Source">print "[LOAD] -> server/Game/Bootstrap.server"
-local waitTimeout = 10
 
-local global = {
-  defaults = { logLevel = 'WARN', waitTimeout = waitTimeout },
-  game = game,
-  isClient = game:GetService("RunService"):IsClient(),
-}
-
-local Bootstrap = require(
-  game:GetService('ReplicatedStorage')
-    :WaitForChild('Scripts', waitTimeout)
-    :WaitForChild('Game', waitTimeout)
-    :WaitForChild('Bootstrap', waitTimeout)
-  )(global)
-
-local Game = global.Require.module('/server/Game')
-Game.start()
+require(
+  game:GetService('ReplicatedStorage').Scripts.Game.Bootstrap
+)({
+  defaults = { logLevel = 'WARN', waitTimeout = 10 },
+})
 
 print "[LOAD] &lt;- server/Game/Bootstrap.server"</string>
           </Properties>
@@ -2141,39 +2176,25 @@ local Assert = global.Assert
 local Require = global.Require
 
 local logger = Require.module('/shared/Helpers/Logger'):new(
-  { level = 'WARN', warnLevel = 'DEBUG', name = 'Game' })
+  { level = 'WARN', warnLevel = 'DEBUG', name = 'GameClient' })
 
 local imports = {
-  ClientServerEvent = Require.instance('/shared/Assets/Game/ClientServerEvent'),
-  GameStateStore = Require.module('/client/Game/GameState/Store'),
-  MainGui = Require.module('/client/Game/Gui/Main'),
+  MainGui = Require.module('/runEnv/Game/Gui/Main'),
   Players = Require.service('Players'),
-  RoduxRemoteBridge = Require.module('/shared/Helpers/RoduxRemoteBridge'),
 }
 -- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
 
 -- MODULE DEFINITION [BEGIN] -------------------------------------------------
 local module = {}
 
-function module.start()
+function module.initRunEnv(initializeStoreFn)
   local log = logger
   if log then
-    log:info("Starting Game")
+    log:info("Starting game")
   end
 
-  local event = imports.ClientServerEvent
-
-  local remoteDispatcher =
-    imports.RoduxRemoteBridge.withDispatchToRemote(event)
-
-  local store = imports.GameStateStore.create(remoteDispatcher)
-
-  imports.RoduxRemoteBridge.relayDispatchesFromRemote(event, store)
-
-  local Players = imports.Players
-  local MainGui = imports.MainGui
-
-  MainGui.mount(store, Players)
+  local store = coroutine.wrap(initializeStoreFn)()
+  imports.MainGui.mount(store, imports.Players)
 end
 
 print "[LOAD] &lt;- client/Game/init"
@@ -2186,23 +2207,12 @@ end
             <Properties>
               <string name="Name">Bootstrap</string>
               <string name="Source">print "[LOAD] -> client/Game/Bootstrap.client"
-local waitTimeout = 10
 
-local global = {
-  defaults = { logLevel = 'WARN', waitTimeout = waitTimeout },
-  game = game,
-  isClient = game:GetService("RunService"):IsClient(),
-}
-
-local Bootstrap = require(
-  game:GetService('ReplicatedStorage')
-    :WaitForChild('Scripts', waitTimeout)
-    :WaitForChild('Game', waitTimeout)
-    :WaitForChild('Bootstrap', waitTimeout)
-  )(global)
-
-local Game = global.Require.module('/client/Game')
-Game.start()
+require(
+  game:GetService('ReplicatedStorage').Scripts.Game.Bootstrap
+)({
+  defaults = { logLevel = 'WARN', waitTimeout = 10 },
+})
 
 print "[LOAD] &lt;- client/Game/Bootstrap.client"</string>
             </Properties>

@@ -7,39 +7,25 @@ local Assert = global.Assert
 local Require = global.Require
 
 local logger = Require.module('/shared/Helpers/Logger'):new(
-  { level = 'WARN', warnLevel = 'DEBUG', name = 'Game' })
+  { level = 'WARN', warnLevel = 'DEBUG', name = 'GameClient' })
 
 local imports = {
-  ClientServerEvent = Require.instance('/shared/Assets/Game/ClientServerEvent'),
-  GameStateStore = Require.module('/client/Game/GameState/Store'),
-  MainGui = Require.module('/client/Game/Gui/Main'),
+  MainGui = Require.module('/runEnv/Game/Gui/Main'),
   Players = Require.service('Players'),
-  RoduxRemoteBridge = Require.module('/shared/Helpers/RoduxRemoteBridge'),
 }
 -- PRIVATE DATA AND HELPER FUNCTIONS [END] -----------------------------------
 
 -- MODULE DEFINITION [BEGIN] -------------------------------------------------
 local module = {}
 
-function module.start()
+function module.initRunEnv(initializeStoreFn)
   local log = logger
   if log then
-    log:info("Starting Game")
+    log:info("Starting game")
   end
 
-  local event = imports.ClientServerEvent
-
-  local remoteDispatcher =
-    imports.RoduxRemoteBridge.withDispatchToRemote(event)
-
-  local store = imports.GameStateStore.create(remoteDispatcher)
-
-  imports.RoduxRemoteBridge.relayDispatchesFromRemote(event, store)
-
-  local Players = imports.Players
-  local MainGui = imports.MainGui
-
-  MainGui.mount(store, Players)
+  local store = coroutine.wrap(initializeStoreFn)()
+  imports.MainGui.mount(store, imports.Players)
 end
 
 print "[LOAD] <- client/Game/init"
